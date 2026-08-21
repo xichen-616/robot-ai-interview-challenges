@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RobotApplication Round 1 Demo</title>
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui, -apple-system, sans-serif; background: light-dark(#f6f8fb, #101827); color: light-dark(#172033, #e8edf8); }
+    body { margin: 0; padding: 24px; } main { max-width: 1120px; margin: auto; }
+    h1 { margin: 0; font-size: 1.65rem; } h2 { margin: 0 0 12px; font-size: 1.05rem; }
+    .subtle { color: light-dark(#556176, #bac5d8); } .notice { margin: 18px 0; padding: 12px 14px; border-left: 4px solid #2563eb; background: light-dark(#eaf2ff, #172b4d); }
+    .flow { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 18px 0; font-weight: 650; } .arrow { color: #2563eb; }
+    .layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, .78fr); gap: 18px; }
+    .card { background: light-dark(#fff, #1a2537); border: 1px solid light-dark(#dde4f0, #334155); border-radius: 10px; padding: 16px; }
+    .controls, .scenarios { display: flex; flex-wrap: wrap; gap: 8px; } .controls { margin-bottom: 12px; }
+    label { display: grid; gap: 5px; font-weight: 650; } input { width: 112px; }
+    button, input { padding: 8px 10px; font: inherit; color: inherit; background: light-dark(#fff, #243247); border: 1px solid light-dark(#cbd5e1, #475569); border-radius: 7px; }
+    button { cursor: pointer; } button:hover { border-color: #2563eb; } button.primary { background: #2563eb; color: white; border-color: #2563eb; } button.scenario { font-size: .9rem; }
+    .state { display: grid; gap: 0; } .state-row { display: flex; justify-content: space-between; gap: 20px; padding: 9px 0; border-bottom: 1px solid light-dark(#e6ebf3, #334155); } .yes { color: #15803d; font-weight: 700; } .no { color: light-dark(#64748b, #a8b5c7); font-weight: 700; }
+    .effect { padding: 10px; margin-top: 8px; border-radius: 7px; background: light-dark(#eef6ff, #152d4d); } .effect strong { display: block; } .no-effect { color: light-dark(#64748b, #a8b5c7); padding: 10px 0; }
+    .log { display: grid; gap: 9px; max-height: 385px; overflow: auto; } .log-entry { padding: 10px; border-left: 3px solid light-dark(#cbd5e1, #475569); background: light-dark(#fbfcfe, #202d42); } .log-entry code { font-weight: 700; } .log-effect { margin-top: 5px; color: light-dark(#2563eb, #93c5fd); }
+    .status { margin: 0 0 12px; padding: 10px; background: light-dark(#f8fafc, #202d42); border-radius: 7px; }
+    @media (max-width: 760px) { body { padding: 14px; } .layout { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Robot AI Application Engineer · Round 1</h1>
+    <p class="subtle">交互式业务状态机演示</p>
+    <div class="notice"><strong>This demo visualizes the Round 1 application state machine.</strong><br>It does NOT execute real ROS 2 robot actions.</div>
+    <div class="flow"><span>Event</span><span class="arrow">→</span><span>UI-side behavioral mirror</span><span class="arrow">→</span><span>State</span><span class="arrow">→</span><span>Effect</span></div>
+    <div class="layout">
+      <section class="card">
+        <h2>发送 Event</h2>
+        <div class="controls">
+          <label>Timestamp
+            <input id="timestamp" type="number" value="0" step="0.001">
+          </label>
+        </div>
+        <div class="controls" id="event-buttons">
+          <button class="primary" data-event="PERSON_ENTERED">PERSON_ENTERED</button>
+          <button data-event="PERSON_LEFT">PERSON_LEFT</button>
+          <button data-event="TICK">TICK</button>
+          <button data-event="CONVERSATION_STARTED">CONVERSATION_STARTED</button>
+          <button data-event="CONVERSATION_ENDED">CONVERSATION_ENDED</button>
+          <button data-event="MEETING_STARTED">MEETING_STARTED</button>
+          <button data-event="MEETING_ENDED">MEETING_ENDED</button>
+        </div>
+        <h2 style="margin-top:20px">一键运行场景</h2>
+        <div class="scenarios">
+          <button class="scenario" data-scenario="welcome">A · 首次进入</button>
+          <button class="scenario" data-scenario="nine">B · 离开 9 秒</button>
+          <button class="scenario" data-scenario="ten">C · 离开 10 秒</button>
+          <button class="scenario" data-scenario="conversation">D · 对话抑制</button>
+          <button class="scenario" data-scenario="meeting">E · 会议超时抑制</button>
+          <button id="reset">重置</button>
+        </div>
+        <h2 style="margin-top:20px">本次 Effect</h2>
+        <div id="effects" aria-live="polite" class="no-effect">No Effect</div>
+      </section>
+      <section class="card">
+        <h2>当前状态</h2>
+        <div id="state" class="state"></div>
+      </section>
+    </div>
+    <section class="card" style="margin-top:18px">
+      <h2>Event Log</h2>
+      <p id="log-status" class="status">尚未发生事件</p>
+      <div id="log" class="log"></div>
+    </section>
+  </main>
+  <script>
+    // This is a UI-side behavioral mirror of robot_application.application.
+    // It lets demo.html run from the file system; it does not import Python.
+    const timeout = 10;
+    const initialState = () => ({ present:false, greeted:false, conversation_active:false, meeting_active:false, left_at:null, departure_sent:false });
+    let state = initialState();
+    let log = [];
+    const timestampInput = document.querySelector('#timestamp');
+    const stateView = document.querySelector('#state');
+    const effectsView = document.querySelector('#effects');
+    const logView = document.querySelector('#log');
+    const logStatus = document.querySelector('#log-status');
+
+    function isSuppressed() { return state.conversation_active || state.meeting_active; }
+    function handleEvent(eventType, timestamp) {
+      if (eventType === 'PERSON_ENTERED') {
+        const alreadyGreeted = state.greeted && !state.departure_sent;
+        const suppressed = isSuppressed();
+        state = { ...state, present:true, greeted:true, left_at:null, departure_sent:false };
+        return suppressed || alreadyGreeted ? [] : [
+          { effect_type:'ROBOT_ACTION', value:'wave_hand', reason:'person_entered' },
+          { effect_type:'SPEECH', value:'欢迎光临', reason:'person_entered' }
+        ];
+      }
+      if (eventType === 'PERSON_LEFT') { if (state.present) state = { ...state, present:false, left_at:timestamp }; return []; }
+      if (eventType === 'CONVERSATION_STARTED') { state = { ...state, conversation_active:true }; return []; }
+      if (eventType === 'CONVERSATION_ENDED') { state = { ...state, conversation_active:false }; return []; }
+      if (eventType === 'MEETING_STARTED') { state = { ...state, meeting_active:true }; return []; }
+      if (eventType === 'MEETING_ENDED') { state = { ...state, meeting_active:false }; return []; }
+      if (eventType === 'TICK' && !state.present && state.left_at !== null && !state.departure_sent && timestamp - state.left_at >= timeout) {
+        state = { ...state, greeted:false, departure_sent:true };
+        return isSuppressed() ? [] : [{ effect_type:'SPEECH', value:'欢迎下次光临', reason:'absence_timeout' }];
+      }
+      return [];
+    }
+    function bool(value) { return `<span class="${value ? 'yes' : 'no'}">${value ? '是' : '否'}</span>`; }
+    function render() {
+      const rows = [
+        ['人员在场', bool(state.present)], ['已经迎宾', bool(state.greeted)], ['对话 active', bool(state.conversation_active)], ['会议 active', bool(state.meeting_active)], ['离场时间', state.left_at === null ? '—' : `${state.left_at}s`], ['本次离场已送客', bool(state.departure_sent)], ['当前抑制状态', bool(isSuppressed())]
+      ];
+      stateView.innerHTML = rows.map(([name,value]) => `<div class="state-row"><span>${name}</span><span>${value}</span></div>`).join('');
+      const last = log.at(-1);
+      effectsView.innerHTML = !last || !last.effects.length ? '<div class="no-effect">No Effect</div>' : last.effects.map(effect => `<div class="effect"><strong>${effect.effect_type}</strong><span>${effect.value}</span><br><small>reason: ${effect.reason}</small></div>`).join('');
+      logStatus.textContent = log.length ? `已处理 ${log.length} 个 Event` : '尚未发生事件';
+      logView.innerHTML = log.slice().reverse().map(item => `<div class="log-entry"><code>${item.eventType} @ ${item.timestamp}s</code>${item.effects.length ? item.effects.map(effect => `<div class="log-effect">→ ${effect.effect_type} / ${effect.value}</div>`).join('') : '<div class="log-effect">→ No Effect</div>'}</div>`).join('');
+    }
+    function dispatch(eventType, timestamp) {
+      const effects = handleEvent(eventType, timestamp);
+      log.push({ eventType, timestamp, effects });
+      timestampInput.value = timestamp;
+      render();
+    }
+    function reset() { state = initialState(); log = []; timestampInput.value = 0; render(); }
+    const scenarios = {
+      welcome: [['PERSON_ENTERED', 0]],
+      nine: [['PERSON_ENTERED', 0], ['PERSON_LEFT', 0], ['TICK', 9]],
+      ten: [['PERSON_ENTERED', 0], ['PERSON_LEFT', 0], ['TICK', 10]],
+      conversation: [['CONVERSATION_STARTED', 0], ['PERSON_ENTERED', 1], ['CONVERSATION_ENDED', 2]],
+      meeting: [['PERSON_ENTERED', 0], ['PERSON_LEFT', 1], ['MEETING_STARTED', 2], ['TICK', 11], ['MEETING_ENDED', 12], ['TICK', 13]]
+    };
+    document.querySelector('#event-buttons').addEventListener('click', event => {
+      const eventType = event.target.dataset.event;
+      if (eventType) dispatch(eventType, Number(timestampInput.value));
+    });
+    document.querySelector('.scenarios').addEventListener('click', event => {
+      const scenario = event.target.dataset.scenario;
+      if (!scenario) return;
+      reset(); scenarios[scenario].forEach(([eventType, timestamp]) => dispatch(eventType, timestamp));
+    });
+    document.querySelector('#reset').addEventListener('click', reset);
+    render();
+  </script>
+</body>
+</html>
