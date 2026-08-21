@@ -142,7 +142,7 @@ inactive
 
 ## 提交
 
-1. Fork 本仓库，创建 `candidate/<候选人编号>` 分支。
+1. Fork 本仓库，创建 `candidate/<Github帐号>` 分支。
 2. 开始后 15 分钟内提交 `PLAN.md`，并创建 Draft PR。
 3. 开始后 120 分钟内完成提交，将 PR 转为 `Ready for review`。
 4. 截止后不要继续提交或改写 Git 历史。
